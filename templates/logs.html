@@ -1,0 +1,47 @@
+{% extends 'layout.html' %}
+{% block content %}
+
+    <div class="container mt-4">
+        <h1>{% block title %}All Presenter Logs{% endblock %}</h1>
+        <form method="POST" action="/delete_logs">
+            <button type="button" id="delete-logs" class="btn btn-danger">
+                Delete All Logs
+            </button>
+        </form>
+        <table class="table table-striped" id="showTable">
+            <thead>
+            <tr>
+                <th>Track Title</th>
+                <th>Show Title</th>
+                <th>Description</th>
+                <th>Created</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for presenter in logs %}
+                <tr>
+                    <td>{{ presenter.track_title }}</td>
+                    <td>{{ presenter.show.title if presenter.show else "Show does not exist in shows" }}</td>
+                    <td>{{ presenter.show.description if presenter.show else "Show does not exist in shows" }}</td>
+                    <td>{{ presenter.created_at }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <script>
+        $(document).ready(function () {
+            $('#showTable').DataTable();
+        });
+
+        $(document).ready(function () {
+            $('#delete-logs').click(function (e) {
+                e.preventDefault(); // Prevent default form submission
+
+                if (confirm("Are you sure you want to delete all logs?")) {
+                    $(this).closest('form').submit();
+                }
+            });
+        });
+    </script>
+{% endblock %}
