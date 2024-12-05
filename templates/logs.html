@@ -12,6 +12,7 @@
             <thead>
             <tr>
                 <th>Track Title</th>
+                <th>Artist</th>
                 <th>Show Title</th>
                 <th>Description</th>
                 <th>Created</th>
@@ -21,6 +22,7 @@
             {% for presenter in logs %}
                 <tr>
                     <td>{{ presenter.track_title }}</td>
+                    <td>{{ presenter.artist }}</td>
                     <td>{{ presenter.show.title if presenter.show else "Show does not exist in shows" }}</td>
                     <td>{{ presenter.show.description if presenter.show else "Show does not exist in shows" }}</td>
                     <td>{{ presenter.created_at }}</td>

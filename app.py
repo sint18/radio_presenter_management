@@ -1,3 +1,4 @@
+import logging
 import os
 import pathlib
 import uuid
@@ -18,6 +19,15 @@ app.secret_key = "a0497e3487139ccc64e8d7941904c6bd656fe97ebe2a7d827efa8a03023679
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///presenter.db'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 db.init_app(app)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("waitress")
+
+
+@app.before_request
+def log_request_info():
+    logger.info(f"{request.method} {request.path} - From: {request.remote_addr}")
 
 
 def allowed_file(filename):
@@ -106,7 +116,6 @@ def delete_show(show_id):
 
 @app.route('/delete_logs', methods=['POST'])
 def delete_logs():
-
     db.session.query(Presenter).delete()
     db.session.commit()
 
@@ -119,17 +128,16 @@ def presenter():
     current_show = request.args.get("artist")
     print(current_show)
     if current_track and current_show:
-        print(current_show, current_track)
+        # print(current_show, current_track)
         show = db.session.scalars(
             select(Show).where(func.lower(Show.title) == current_show.lower()).order_by(Show.updated_at.desc())).first()
-        print(show)
-        new_presenter = Presenter(track_title=current_track, show_id=show.id if show else None)
+        # print(show)
+        new_presenter = Presenter(track_title=current_track, artist=current_show, show_id=show.id if show else None)
         db.session.add(new_presenter)
         db.session.commit()
 
         return jsonify({})
 
-    # stmt = select(Show).where(Show.title == current_show).order_by(Show.updated_at.desc())
     current_presenter = db.session.scalars(select(Presenter).order_by(Presenter.created_at.desc())).first()
 
     if current_presenter and current_presenter.show:
@@ -140,7 +148,6 @@ def presenter():
             return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
     else:
         # Default Image
-        # print(f"Current Presenter : {current_presenter.track_title}")
         return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
 
 

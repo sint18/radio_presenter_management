@@ -25,6 +25,7 @@ class Show(db.Model):
 class Presenter(db.Model):
     id = db.Column(Uuid, primary_key=True, default=uuid.uuid4)
     track_title = db.Column(db.String(255), nullable=False)
+    artist = db.Column(db.String(255), nullable=True)
     show_id = mapped_column(ForeignKey("show.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.now())
 
