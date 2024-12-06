@@ -4,6 +4,7 @@ import pathlib
 import uuid
 
 from flask import Flask, render_template, request, jsonify, redirect, flash, url_for
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from pathlib import Path
 from models import db
@@ -18,6 +19,7 @@ app = Flask(__name__)
 app.secret_key = "a0497e3487139ccc64e8d7941904c6bd656fe97ebe2a7d827efa8a030236797a"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///presenter.db'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+CORS(app)
 db.init_app(app)
 
 # Configure logging
