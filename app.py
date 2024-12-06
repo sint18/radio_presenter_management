@@ -1,11 +1,7 @@
 import logging
-import os
-import pathlib
-import tempfile
-import uuid
 
 import google.api_core.exceptions
-from flask import Flask, render_template, request, jsonify, redirect, flash, url_for, send_file
+from flask import Flask, render_template, request, jsonify, redirect, flash, url_for, send_file, Response
 from google.cloud.firestore_v1 import FieldFilter
 from werkzeug.utils import secure_filename
 from firebase_admin import credentials, initialize_app, firestore, storage
@@ -97,17 +93,18 @@ def edit_show(show_id):
             image_file = request.files.get("image")
             if image_file.filename != '':
                 if allowed_file(image_file.filename):
-                    # Upload new image
-                    filename = secure_filename(image_file.filename)
-                    blob = bucket.blob(f"images/{filename}")
-                    blob.upload_from_file(image_file)
-                    image_url = blob.public_url
 
                     # Delete old image
                     if "image_url" in show:
                         print(show["image_url"])
                         old_blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
                         old_blob.delete()
+
+                    # Upload new image
+                    filename = secure_filename(image_file.filename)
+                    blob = bucket.blob(f"images/{filename}")
+                    blob.upload_from_file(image_file)
+                    image_url = blob.public_url
 
                     updates["image_url"] = image_url
 
@@ -165,7 +162,7 @@ def presenter():
 
     show_ref = db.collection("show_log")
     query = show_ref.order_by("created_at", direction=firestore.Query.DESCENDING).limit(1)
-
+    blob = None
     try:
         latest_show_log = query.get()
         print(latest_show_log[0].to_dict())
@@ -173,32 +170,21 @@ def presenter():
         show_ref = db.collection("shows").document(current_presenter.get("show_id"))
         show = show_ref.get().to_dict()
         blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
-        with tempfile.NamedTemporaryFile() as temp:
-            blob.download_to_filename(temp.name)
-            return send_file(temp.name)
 
-        # return show.get("image_url")
     except:
         show_ref = db.collection("shows").where(filter=FieldFilter("title", "==", "Default")).get()
         if show_ref:
             default_show = show_ref[0].to_dict()
             blob = bucket.blob(f"images/{default_show['image_url'].split('/')[-1]}")
-            with tempfile.NamedTemporaryFile() as temp:
-                blob.download_to_filename(temp.name)
-                return send_file(temp.name)
 
-    # current_presenter = db.session.scalars(select(Presenter).order_by(Presenter.created_at.desc())).first()
-    #
-    # if current_presenter and current_presenter.show:
-    #     print(f"Current Presenter : {current_presenter.show.title}")
-    #     if pathlib.Path(app.config["UPLOAD_FOLDER"]).joinpath(current_presenter.show.image_url).exists():
-    #         return send_from_directory(app.config["UPLOAD_FOLDER"], current_presenter.show.image_url)
-    #     else:
-    #         return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
-    # else:
-    #     # Default Image
-    #     return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
-    return ""
+    content_type = None
+    try:
+        content_type = blob.content_type
+    except:
+        pass
+    file = blob.download_as_string()
+    print(type(file))
+    return Response(file, mimetype=content_type)
 
 
 @app.route("/logs", methods=["GET"])
@@ -211,7 +197,7 @@ def show_logs():
     for log in logs:
         log_data = log.to_dict()
         log_data['id'] = log.id  # Include document ID
-        show = db.collection("shows").document(log_data.get("show")).get()
+        show = db.collection("shows").document(log_data.get("show_id")).get()
         show_data = show.to_dict()
         if show_data:
             log_data["show_title"] = show_data.get("title")

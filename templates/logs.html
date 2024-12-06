@@ -23,8 +23,8 @@
                 <tr>
                     <td>{{ presenter.track_title }}</td>
                     <td>{{ presenter.artist }}</td>
-                    <td>{{ presenter.show.title if presenter.show else "Show does not exist in shows" }}</td>
-                    <td>{{ presenter.show.description if presenter.show else "Show does not exist in shows" }}</td>
+                    <td>{{ presenter.show_title if presenter.show else "Show does not exist in shows" }}</td>
+                    <td>{{ presenter.show_description if presenter.show else "Show does not exist in shows" }}</td>
                     <td>{{ presenter.created_at }}</td>
                 </tr>
             {% endfor %}
