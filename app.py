@@ -25,6 +25,7 @@ initialize_app(cred, {
 db = firestore.client(database_id="radio-presenter")
 bucket = storage.bucket()
 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("flask-app")
@@ -186,8 +187,6 @@ def presenter():
                 blob.download_to_filename(temp.name)
                 return send_file(temp.name)
 
-    return ""
-
     # current_presenter = db.session.scalars(select(Presenter).order_by(Presenter.created_at.desc())).first()
     #
     # if current_presenter and current_presenter.show:
@@ -199,6 +198,38 @@ def presenter():
     # else:
     #     # Default Image
     #     return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
+    return ""
+
+
+@app.route("/logs", methods=["GET"])
+def show_logs():
+    # Fetch logs from Firestore
+    logs_ref = db.collection('show_log')
+    logs = logs_ref.stream()
+    # Format logs as a list of dictionaries
+    logs_list = []
+    for log in logs:
+        log_data = log.to_dict()
+        log_data['id'] = log.id  # Include document ID
+        show = db.collection("shows").document(log_data.get("show")).get()
+        show_data = show.to_dict()
+        if show_data:
+            log_data["show_title"] = show_data.get("title")
+            log_data["show_description"] = show_data.get("description")
+        logs_list.append(log_data)
+        print(log_data)
+    return render_template("logs.html", logs=logs_list)
+
+
+@app.route("/delete_logs", methods=["POST"])
+def delete_all_show_logs():
+    logs_ref = db.collection('show_log')
+    logs = logs_ref.list_documents()
+
+    for log in logs:
+        log.delete()
+
+    return redirect(url_for("show_logs"))
 
 
 if __name__ == '__main__':
