@@ -1,28 +1,33 @@
 import logging
 import os
 import pathlib
+import tempfile
 import uuid
 
-from flask import Flask, render_template, request, jsonify, redirect, flash, url_for
+import google.api_core.exceptions
+from flask import Flask, render_template, request, jsonify, redirect, flash, url_for, send_file
+from google.cloud.firestore_v1 import FieldFilter
 from werkzeug.utils import secure_filename
-from pathlib import Path
-from models import db
-from models import Presenter, Show
-from sqlalchemy import select, func
-from flask import send_from_directory
+from firebase_admin import credentials, initialize_app, firestore, storage
 
+# Allowed file extensions for uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
-UPLOAD_FOLDER = Path("./static/images")
 
+# Initialize Flask app
 app = Flask(__name__)
 app.secret_key = "a0497e3487139ccc64e8d7941904c6bd656fe97ebe2a7d827efa8a030236797a"
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///presenter.db'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-db.init_app(app)
+
+# Initialize Firebase
+cred = credentials.Certificate("firebase_credentials.json")
+initialize_app(cred, {
+    "storageBucket": "radio-presenter-cdb9d.firebasestorage.app"
+})
+db = firestore.client(database_id="radio-presenter")
+bucket = storage.bucket()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("waitress")
+logger = logging.getLogger("flask-app")
 
 
 @app.before_request
@@ -31,12 +36,7 @@ def log_request_info():
 
 
 def allowed_file(filename):
-    return '.' in filename and \
-        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-with app.app_context():
-    db.create_all()
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -44,6 +44,7 @@ def index():
     if request.method == 'POST':
         show_name = request.form.get("show_name")
         description = request.form.get("description")
+
         if 'image' not in request.files:
             flash('No images, please add show images.', 'error')
             return redirect(request.url)
@@ -54,72 +55,92 @@ def index():
             flash('No selected file')
             return redirect(request.url)
         if image_file and allowed_file(image_file.filename):
+            # Save image to Firebase Storage
             filename = secure_filename(image_file.filename)
-            image_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            # return redirect(url_for('download_file', name=filename))
-            # return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+            blob = bucket.blob(f"images/{filename}")
+            blob.upload_from_file(image_file)
+            image_url = blob.public_url
 
-            new_show = Show(title=show_name, image_url=image_file.filename, description=description)
-            db.session.add(new_show)
-            db.session.commit()
+            # Save show to Firestore
+            new_show = {
+                "title": show_name,
+                "description": description,
+                "image_url": image_url,
+                "created_at": firestore.SERVER_TIMESTAMP
+            }
+            db.collection("shows").add(new_show)
             flash("New Show Added", 'success')
-    shows = db.session.scalars(select(Show)).all()
+
+    # Fetch all shows from Firestore
+    shows = db.collection("shows").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+    shows = [{"id": show.id, **show.to_dict()} for show in shows]
     return render_template('index.html', shows=shows)
 
 
 @app.route('/edit/<show_id>', methods=['GET', 'POST'])
 def edit_show(show_id):
-    show = db.session.scalars(select(Show).where(Show.id == uuid.UUID(show_id))).first()
+    show_ref = db.collection("shows").document(show_id)
+    show = show_ref.get().to_dict()
+
     if not show:
-        flash(f"No Show exists with that ID:{show_id}", 'error')
-        return url_for("index")
+        flash(f"No Show exists with that ID: {show_id}", 'error')
+        return redirect(url_for("index"))
 
     if request.method == 'POST':
-        show.title = request.form.get("title")
-        show.description = request.form.get("description")
+        title = request.form.get("title")
+        description = request.form.get("description")
+
+        updates = {"title": title, "description": description}
 
         if 'image' in request.files:
             image_file = request.files.get("image")
             if image_file.filename != '':
-                if image_file and allowed_file(image_file.filename):
+                if allowed_file(image_file.filename):
+                    # Upload new image
                     filename = secure_filename(image_file.filename)
-                    image_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                    if pathlib.Path(app.config["UPLOAD_FOLDER"], show.image_url).exists():
-                        pathlib.Path(app.config["UPLOAD_FOLDER"], show.image_url).unlink()
-                    show.image_url = filename
+                    blob = bucket.blob(f"images/{filename}")
+                    blob.upload_from_file(image_file)
+                    image_url = blob.public_url
 
-        db.session.commit()
+                    # Delete old image
+                    if "image_url" in show:
+                        print(show["image_url"])
+                        old_blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
+                        old_blob.delete()
+
+                    updates["image_url"] = image_url
+
+        show_ref.update(updates)
         flash('Show updated successfully!', 'success')
         return redirect(url_for('index'))
 
-    return render_template('edit_show.html', show=show)
+    return render_template('edit_show.html', show={"id": show_id, **show})
 
 
 @app.route('/delete_show/<show_id>', methods=['POST'])
 def delete_show(show_id):
-    print(show_id)
-    show = db.session.scalars(select(Show).where(Show.id == uuid.UUID(show_id))).first()
+    show_ref = db.collection("shows").document(show_id)
+    show = show_ref.get().to_dict()
 
     if not show:
-        flash(f"No Show with the Id:{show_id}", 'error')
+        flash(f"No Show with the ID: {show_id}", 'error')
         return redirect(url_for('index'))
 
-    if pathlib.Path(app.config["UPLOAD_FOLDER"], show.image_url).exists():
-        pathlib.Path(app.config["UPLOAD_FOLDER"], show.image_url).unlink()
+    # Delete image from Firebase Storage
+    if "image_url" in show:
+        blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
+        try:
+            blob.delete()
+        except google.api_core.exceptions.NotFound:
+            show_ref.delete()
 
-    db.session.delete(show)
-    db.session.commit()
-
+        finally:
+            flash('Show deleted successfully!', 'success')
+            return redirect(url_for('index'))
+    # Delete document from Firestore
+    show_ref.delete()
     flash('Show deleted successfully!', 'success')
     return redirect(url_for('index'))
-
-
-@app.route('/delete_logs', methods=['POST'])
-def delete_logs():
-    db.session.query(Presenter).delete()
-    db.session.commit()
-
-    return redirect(url_for('view_logs'))
 
 
 @app.route("/presenter", methods=["GET"])
@@ -128,38 +149,56 @@ def presenter():
     current_show = request.args.get("artist")
     print(current_show)
     if current_track and current_show:
-        # print(current_show, current_track)
-        show = db.session.scalars(
-            select(Show).where(func.lower(Show.title) == current_show.lower()).order_by(Show.updated_at.desc())).first()
-        # print(show)
-        new_presenter = Presenter(track_title=current_track, artist=current_show, show_id=show.id if show else None)
-        db.session.add(new_presenter)
-        db.session.commit()
-
+        show_ref = db.collection("shows")
+        query = show_ref.where(filter=FieldFilter("title", "==", current_show))
+        existing_show = query.get()
+        new_show = {
+            "track_title": current_track,
+            "show": existing_show[0].to_dict().get("title") if existing_show else None,
+            "show_id": existing_show[0].id if existing_show else None,
+            "artist": current_show,
+            "created_at": firestore.SERVER_TIMESTAMP
+        }
+        db.collection("show_log").add(new_show)
         return jsonify({})
 
-    current_presenter = db.session.scalars(select(Presenter).order_by(Presenter.created_at.desc())).first()
+    show_ref = db.collection("show_log")
+    query = show_ref.order_by("created_at", direction=firestore.Query.DESCENDING).limit(1)
 
-    if current_presenter and current_presenter.show:
-        print(f"Current Presenter : {current_presenter.show.title}")
-        if pathlib.Path(app.config["UPLOAD_FOLDER"]).joinpath(current_presenter.show.image_url).exists():
-            return send_from_directory(app.config["UPLOAD_FOLDER"], current_presenter.show.image_url)
-        else:
-            return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
-    else:
-        # Default Image
-        return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
+    try:
+        latest_show_log = query.get()
+        print(latest_show_log[0].to_dict())
+        current_presenter = {"id": latest_show_log[0].id, **latest_show_log[0].to_dict()}
+        show_ref = db.collection("shows").document(current_presenter.get("show_id"))
+        show = show_ref.get().to_dict()
+        blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
+        with tempfile.NamedTemporaryFile() as temp:
+            blob.download_to_filename(temp.name)
+            return send_file(temp.name)
 
+        # return show.get("image_url")
+    except:
+        show_ref = db.collection("shows").where(filter=FieldFilter("title", "==", "Default")).get()
+        if show_ref:
+            default_show = show_ref[0].to_dict()
+            blob = bucket.blob(f"images/{default_show['image_url'].split('/')[-1]}")
+            with tempfile.NamedTemporaryFile() as temp:
+                blob.download_to_filename(temp.name)
+                return send_file(temp.name)
 
-@app.route('/logs', methods=["GET", "POST"])
-def view_logs():
-    presenters = db.session.scalars(select(Presenter).order_by(Presenter.created_at.desc()))
-    return render_template("logs.html", logs=presenters)
+    return ""
 
-
-@app.route('/uploads/<filename>')
-def download_file(filename):
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+    # current_presenter = db.session.scalars(select(Presenter).order_by(Presenter.created_at.desc())).first()
+    #
+    # if current_presenter and current_presenter.show:
+    #     print(f"Current Presenter : {current_presenter.show.title}")
+    #     if pathlib.Path(app.config["UPLOAD_FOLDER"]).joinpath(current_presenter.show.image_url).exists():
+    #         return send_from_directory(app.config["UPLOAD_FOLDER"], current_presenter.show.image_url)
+    #     else:
+    #         return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
+    # else:
+    #     # Default Image
+    #     return send_from_directory(app.config["UPLOAD_FOLDER"], "image.webp")
 
 
 if __name__ == '__main__':

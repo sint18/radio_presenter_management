@@ -41,7 +41,7 @@
                             <td>{{ show.title }}</td>
                             <td>
                                 {% if show.image_url %}
-                                    <img src="{{ url_for('download_file', filename=show.image_url) }}" alt="Image"
+                                    <img src="{{ show.image_url }}" alt="Image"
                                          class="img-thumbnail" width="50px">
                                 {% else %}
                                     No Image Available
