@@ -98,7 +98,10 @@ def edit_show(show_id):
                     if "image_url" in show:
                         print(show["image_url"])
                         old_blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
-                        old_blob.delete()
+                        try:
+                            old_blob.delete()
+                        except google.api_core.exceptions.NotFound:
+                            pass
 
                     # Upload new image
                     filename = secure_filename(image_file.filename)
