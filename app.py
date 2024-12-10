@@ -16,9 +16,9 @@ app.secret_key = "a0497e3487139ccc64e8d7941904c6bd656fe97ebe2a7d827efa8a03023679
 # Initialize Firebase
 cred = credentials.Certificate("firebase_credentials.json")
 initialize_app(cred, {
-    "storageBucket": "radio-presenter-cdb9d.firebasestorage.app"
+    "storageBucket": "radio-presenter-520a3.firebasestorage.app"
 })
-db = firestore.client(database_id="radio-presenter")
+db = firestore.client()
 bucket = storage.bucket()
 
 
@@ -206,7 +206,6 @@ def show_logs():
             log_data["show_title"] = show_data.get("title")
             log_data["show_description"] = show_data.get("description")
         logs_list.append(log_data)
-        print(log_data)
     return render_template("logs.html", logs=logs_list)
 
 
