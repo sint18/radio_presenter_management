@@ -1,4 +1,5 @@
 import logging
+import datetime
 
 import google.api_core.exceptions
 from flask import Flask, render_template, request, jsonify, redirect, flash, url_for, send_file, Response
@@ -20,7 +21,6 @@ initialize_app(cred, {
 })
 db = firestore.client()
 bucket = storage.bucket()
-
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -69,8 +69,25 @@ def index():
             flash("New Show Added", 'success')
 
     # Fetch all shows from Firestore
-    shows = db.collection("shows").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-    shows = [{"id": show.id, **show.to_dict()} for show in shows]
+    shows_generator = db.collection("shows").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+    shows = []
+
+    for show in shows_generator:
+        show_dict = show.to_dict()
+        try:
+            blob = bucket.blob(f"images/{show_dict['image_url'].split('/')[-1]}")
+
+            signed_image_url = blob.generate_signed_url(
+                version="v4",
+                # This URL is valid for 15 minutes
+                expiration=datetime.timedelta(minutes=15),
+                # Allow GET requests using this URL.
+                method="GET",
+            )
+            shows.append({"id": show.id, **show_dict, "image_url": signed_image_url})
+        except Exception as e:
+            print(e)
+            pass
     return render_template('index.html', shows=shows)
 
 
@@ -114,7 +131,21 @@ def edit_show(show_id):
         show_ref.update(updates)
         flash('Show updated successfully!', 'success')
         return redirect(url_for('index'))
+    if show:
+        try:
+            blob = bucket.blob(f"images/{show['image_url'].split('/')[-1]}")
 
+            signed_image_url = blob.generate_signed_url(
+                version="v4",
+                # This URL is valid for 15 minutes
+                expiration=datetime.timedelta(minutes=15),
+                # Allow GET requests using this URL.
+                method="GET",
+            )
+            show["image_url"] = signed_image_url
+        except Exception as e:
+            print(e)
+            pass
     return render_template('edit_show.html', show={"id": show_id, **show})
 
 
