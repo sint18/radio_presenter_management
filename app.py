@@ -5,7 +5,9 @@ import google.api_core.exceptions
 from flask import Flask, render_template, request, jsonify, redirect, flash, url_for, send_file, Response
 from google.cloud.firestore_v1 import FieldFilter
 from werkzeug.utils import secure_filename
-from firebase_admin import credentials, initialize_app, firestore, storage
+from firebase_admin import firestore
+from firebase import db, bucket
+from jobs import scheduler
 
 # Allowed file extensions for uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
@@ -14,17 +16,12 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 app = Flask(__name__)
 app.secret_key = "a0497e3487139ccc64e8d7941904c6bd656fe97ebe2a7d827efa8a030236797a"
 
-# Initialize Firebase
-cred = credentials.Certificate("firebase_credentials.json")
-initialize_app(cred, {
-    "storageBucket": "radio-presenter-520a3.firebasestorage.app"
-})
-db = firestore.client()
-bucket = storage.bucket()
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("flask-app")
+
+# Start jobs
+scheduler.start()
 
 
 @app.before_request
