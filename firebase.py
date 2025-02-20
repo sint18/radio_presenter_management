@@ -1,6 +1,5 @@
 from firebase_admin import credentials, initialize_app, firestore, storage
 
-
 # Initialize Firebase
 cred = credentials.Certificate("firebase_credentials.json")
 initialize_app(cred, {
@@ -8,3 +7,4 @@ initialize_app(cred, {
 })
 db = firestore.client()
 bucket = storage.bucket()
+
