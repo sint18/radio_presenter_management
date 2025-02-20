@@ -7,7 +7,9 @@ from google.cloud.firestore_v1 import FieldFilter
 from werkzeug.utils import secure_filename
 from firebase_admin import firestore
 from firebase import db, bucket
-from jobs import scheduler
+
+# from jobs import scheduler
+from datetime import datetime, timedelta
 
 # Allowed file extensions for uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
@@ -20,8 +22,9 @@ app.secret_key = "a0497e3487139ccc64e8d7941904c6bd656fe97ebe2a7d827efa8a03023679
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("flask-app")
 
+
 # Start jobs
-scheduler.start()
+# scheduler.start()
 
 
 @app.before_request
@@ -246,6 +249,28 @@ def delete_all_show_logs():
         log.delete()
 
     return redirect(url_for("show_logs"))
+
+
+@app.delete("/delete_old_logs")
+def delete_old_records():
+    weeks = 2
+
+    # Calculate the timestamp for records older than 2 weeks
+    cutoff_time = datetime.utcnow() - timedelta(weeks=weeks)
+    logs_ref = db.collection("show_log")
+    query = logs_ref.where(filter=FieldFilter("created_at", "<", cutoff_time))
+    docs = query.stream()
+
+    deleted_count = 0
+    # Delete documents
+    for doc in docs:
+        doc.reference.delete()
+        deleted_count += 1
+        # print(f"{doc.id} => {doc.to_dict()}")
+
+    status = f"Deleted {deleted_count} records older than {weeks} weeks from the 'logs' collection."
+    print(status)
+    return status
 
 
 if __name__ == '__main__':

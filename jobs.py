@@ -29,5 +29,5 @@ def delete_old_records():
     print(f"Deleted {deleted_count} records older than {weeks} weeks from the 'logs' collection.")
 
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(delete_old_records, 'interval', weeks=4)
+# scheduler = BackgroundScheduler()
+# scheduler.add_job(delete_old_records, 'interval', weeks=4)
